@@ -2,7 +2,7 @@ import random
 import re
 import nonebot
 from PIL import Image as PILImage
-from nonebot import on,on_command, on_startswith
+from nonebot import on, on_command, on_startswith
 from nonebot.rule import to_me
 from nonebot.rule import Rule
 from nonebot.adapters.onebot.v11 import MessageSegment
@@ -39,8 +39,17 @@ test = on_startswith(".paint", ignorecase=False)
 qqGroup_test = 964880841
 qqGroup_main = 754954614
 
-save_dir = 'C:\\XueShengZe\\notwork\\img_for_qqbot\\'
-save_file = '\\tmp_p2p.png'
+argument_dict = dict()
+
+root_dir = 'D:\\qqbot'
+save_dir = os.path.join(root_dir, 'save')
+save_file = 'tmp_p2p.png'
+photo_dir = os.path.join(root_dir, 'photo')
+
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+if not os.path.exists(photo_dir):
+    os.makedirs(photo_dir)
 
 current_argument = {
     'prompt': '',
@@ -59,14 +68,14 @@ default_argument = {
     "sampler_name": "Euler a",
     "scheduler": "",
     'seed': -1,
-    'steps': 25,
+    'steps': 30,
     'width': 600,
     'height': 800,
     'cfg_scale': 7,
     'n_iter': 1,
 }
-default_prompt = ("score_9,score_8_up,score_7_up,")
-default_negative_prompt = ("(score_4,score_3,score_2,score_1), ugly, worst quality,bad hands,bad feet,")
+default_prompt = ("score_9,score_8_up,score_7_up,score_6_up,score_5_up,")
+default_negative_prompt = ("score_4,score_3,score_2,score_1, ugly, worst quality,bad hands,bad feet,missing fingers,fused fingers,too many fingers,")
 detail_argument = {
     "prompt": "",
     "negative_prompt": "",
@@ -132,7 +141,7 @@ default_p2p_argument = {
     "sampler_name": "Euler a",
     "scheduler": "",
     'seed': -1,
-    'steps': 25,
+    'steps': 30,
     'width': 600,
     'height': 800,
     'cfg_scale': 7,
@@ -142,6 +151,7 @@ default_p2p_argument = {
     "denoising_strength": 0.5
 }
 
+
 @test.handle()
 async def _(bot: Bot, event: Event):
     group_member_info_json = await bot.get_group_member_info(group_id=qqGroup_main, user_id=event.get_user_id(),
@@ -149,7 +159,8 @@ async def _(bot: Bot, event: Event):
     username = group_member_info_json['card'] if group_member_info_json['card'] \
         else (group_member_info_json['nickname'] if group_member_info_json['nickname']
               else group_member_info_json['user_id'])
-    await test.finish(Message1(username+"，我是你爹"))
+    await test.finish(Message1(username + "，我是你爹"))
+
 
 @setu.handle()
 async def handle_function1(args: Message = CommandArg()):
@@ -161,10 +172,10 @@ async def handle_function1(args: Message = CommandArg()):
     print(current_argument)
     if args_legal:
         await setu.send("收到，开始生成")
-        image_paths = await get_data(current_argument)
+        image_paths, seeds = await get_data(current_argument)
         for image_path in image_paths:
             await setu.send(MessageSegment.image(image_path))
-        await setu.finish("所有图片已生成")
+        await setu.finish(f"所有图片已生成\nseeds: {seeds.__str__()}")
     else:
         await setu.finish(f"参数解析失败")
 
@@ -179,7 +190,7 @@ async def handle_function1_1(bot: Bot, event: Event, args: Message = CommandArg(
         group_member_info_json = await bot.get_group_member_info(group_id=qqGroup_main, user_id=event.get_user_id(),
                                                                  no_cache=True)
         await setuToGroup.send("收到，开始生成")
-        image_path = await get_data(current_argument)
+        image_path, seeds = await get_data(current_argument)
         await bot.send_group_msg(group_id=qqGroup_main, message=MessageSegment.image(image_path))
         username = group_member_info_json['card'] if group_member_info_json['card'] \
             else (group_member_info_json['nickname'] if group_member_info_json['nickname']
@@ -214,8 +225,8 @@ async def handle_data_function(bot: Bot, event: Event, args: Message = CommandAr
             # 定义源文件路径和目标文件路径
             save_folder = user_id
             # 复制文件
-            target_folder = "".join([save_dir, save_folder])
-            target_dir = "".join([save_dir, save_folder, save_file])
+            target_folder = os.path.join(save_dir, save_folder)
+            target_dir = os.path.join(target_folder, save_file)
             if not os.path.exists(target_folder):
                 os.makedirs(target_folder)
             shutil.copy(file_addr, target_dir)
@@ -236,6 +247,11 @@ async def handle_p2p_function(bot: Bot, event: Event, args: Message = CommandArg
     user_id = event.get_user_id()
     if not user_id:
         await data.finish("非法的用户id")
+
+    # 判断argument_dict中是否有该用户的数据
+    if user_id not in argument_dict:
+        argument_dict[user_id] = default_p2p_argument
+
     # 遍历Message对象中的每一个MessageSegment
     for segment in args:
         if segment.type == 'text':
@@ -254,19 +270,19 @@ async def handle_p2p_function(bot: Bot, event: Event, args: Message = CommandArg
                     except ValueError:
                         pd_value = None
                         await p2p.finish("参数解析失败")
-                    default_p2p_argument['denoising_strength'] = pd_value
-                    default_p2p_argument['prompt'] = "".join([default_prompt, remaining_str])
-                    default_p2p_argument['negative_prompt'] = "".join([default_negative_prompt])
+                    argument_dict[user_id]['denoising_strength'] = pd_value
+                    argument_dict[user_id]['prompt'] = "".join([default_prompt, remaining_str])
+                    argument_dict[user_id]['negative_prompt'] = "".join([default_negative_prompt])
                 else:
                     await p2p.finish("参数解析失败")
 
-    img_addr = "".join([save_dir, user_id, save_file])
+    img_addr = os.path.join(save_dir, user_id, save_file)
     try:
         # 尝试打开图像文件
         with PILImage.open(img_addr) as img:
             width, height = img.size
-            default_p2p_argument['width'] = width
-            default_p2p_argument['height'] = height
+            argument_dict[user_id]['width'] = width
+            argument_dict[user_id]['height'] = height
             print(f"Image opened successfully: {img_addr}")
     except IOError as e:
         print(f"Failed to open image {img_addr}: {e}")
@@ -275,8 +291,8 @@ async def handle_p2p_function(bot: Bot, event: Event, args: Message = CommandArg
         ima_data = file.read()
     await p2p.send("收到，开始生成")
     encoded_image = base64.b64encode(ima_data).decode('utf-8')
-    default_p2p_argument['init_images'] = [encoded_image]
-    image_path = await get_p2p(default_p2p_argument)
+    argument_dict[user_id]['init_images'] = [encoded_image]
+    image_path = await get_p2p(argument_dict[user_id])
     await p2p.finish(MessageSegment.image(image_path))
 
 
@@ -300,13 +316,13 @@ def read_args(arg_text):
     global default_argument
     try:
         if arg_text.startswith('-oph'):
-            prompt = arg_text[3:].strip()
+            prompt = arg_text[4:].strip()
             current_argument.update(default_argument)
-            current_argument['prompt'] = "".join(["<lora:Expressive_H:0.8>,", prompt])
+            current_argument['prompt'] = "".join([default_prompt, "<lora:Expressive_H:0.8>,", prompt])
             current_argument['negative_prompt'] = "".join(default_negative_prompt)
             current_argument['seed'] = random.randint(1, 10000)
         elif arg_text.startswith('-op'):
-            prompt = arg_text[2:].strip()
+            prompt = arg_text[3:].strip()
             current_argument = copy.copy(default_argument)
             current_argument['prompt'] = "".join([default_prompt, prompt])
             current_argument['negative_prompt'] = "".join(default_negative_prompt)
@@ -330,16 +346,14 @@ def read_args(arg_text):
 async def get_data(user_data):
     txt2img_url = r'http://127.0.0.1:7861/sdapi/v1/txt2img'
     response = submit_post(txt2img_url, user_data)
+    response_info = json.loads(response.json()['info'])
+    seeds = response_info['all_seeds']
     image_paths = []
     for i in range(user_data['n_iter']):
-        save_image_path = rf'C:\XueShengZe\notwork\img_for_qqbot\tmp_{i + 1}.png'
+        save_image_path = os.path.join(photo_dir, f'tmp_{i + 1}_{seeds[i]}.png')
         save_encoded_image(response.json()['images'][i], save_image_path)
         image_paths.append(save_image_path)
-    return image_paths
-    #save_image_path = r'C:\XueShengZe\notwork\img_for_qqbot\tmp.png'
-    #save_encoded_image(response.json()['images'][0], save_image_path)
-
-    #return save_image_path
+    return image_paths, seeds
 
 
 async def get_p2p(user_prompt):
@@ -348,7 +362,7 @@ async def get_p2p(user_prompt):
     print(user_prompt['negative_prompt'])
     print(user_prompt['denoising_strength'])
     response = submit_post(txt2img_url, user_prompt)
-    save_image_path = r'C:\XueShengZe\notwork\img_for_qqbot\tmp.png'
+    save_image_path = os.path.join(photo_dir, 'tmp_p2p.png')
     save_encoded_image(response.json()['images'][0], save_image_path)
 
     return save_image_path
